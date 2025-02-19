@@ -24,6 +24,7 @@ def train(
     epochs: int = 1000,
     patience: int = 20,
     batch_size: int = 16,
+    check_val_every_n_epoch: int = 5,
 ):
     gc.collect()
     torch.cuda.empty_cache()
@@ -122,7 +123,7 @@ def train(
         ),
         callbacks=callbacks,
         max_epochs=epochs,
-        check_val_every_n_epoch=5,
+        check_val_every_n_epoch=check_val_every_n_epoch,
         deterministic=False,  # If True, raises error saying that CTC loss does not have this behaviour
         benchmark=False,
         precision="16-mixed",  # Mixed precision training
