@@ -2,6 +2,8 @@ import os
 import json
 import math
 
+from tqdm import tqdm
+
 import torch
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
@@ -23,7 +25,7 @@ class CTCDataModule(LightningDataModule):
         ds_name: str,
         use_voice_change_token: bool = False,
         batch_size: int = 16,
-        num_workers: int = 20,
+        num_workers: int = 4,
         width_reduction: int = 2,
     ):
         super(CTCDataModule, self).__init__()
@@ -243,7 +245,7 @@ class CTCDataset(Dataset):
         max_seq_len = 0
         max_audio_len = 0
         max_frame_multiplier_factor = 0
-        for t in os.listdir("Quartets/krn"):
+        for t in tqdm(os.listdir("Quartets/krn"), desc=f"Setting max lengths ({self.ds_name}/{self.partition_type})"):
             if t.endswith(".krn") and not t.startswith("."):
                 # Max transcript length
                 transcript = self.krn_parser.convert(

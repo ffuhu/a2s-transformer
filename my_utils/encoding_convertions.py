@@ -127,7 +127,7 @@ class krnParser:
             elif "r" in in_token:  # Rest
                 out_token = in_token.split("r")[0] + "r"
             else:  # Music note
-                out_token = re.findall("\[*\d+[.]*[a-gA-G]+[n#-]*\]*", in_token)[0]
+                out_token = re.findall(r"\[*\d+[.]*[a-gA-G]+[n#-]*\]*", in_token)[0]
 
         return out_token
 

@@ -1,5 +1,7 @@
 import math
 
+from tqdm import tqdm
+
 import torch
 from torch.utils.data import DataLoader
 from lightning.pytorch import LightningDataModule
@@ -18,7 +20,7 @@ class ARDataModule(LightningDataModule):
         ds_name: str,
         use_voice_change_token: bool = False,
         batch_size: int = 16,
-        num_workers: int = 20,
+        num_workers: int = 4,
     ):
         super(ARDataModule, self).__init__()
         self.ds_name = ds_name
@@ -26,25 +28,34 @@ class ARDataModule(LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
 
+        # to prevent executing setup() twice, once when defining the model
+        #  arch and another when runing trainer.fit()
+        self.train_ds = None
+        self.val_ds = None
+        self.test_ds = None
+
     def setup(self, stage: str):
         if stage == "fit":
-            self.train_ds = ARDataset(
-                ds_name=self.ds_name,
-                partition_type="train",
-                use_voice_change_token=self.use_voice_change_token,
-            )
-            self.val_ds = ARDataset(
-                ds_name=self.ds_name,
-                partition_type="val",
-                use_voice_change_token=self.use_voice_change_token,
-            )
+            if not self.train_ds:
+                self.train_ds = ARDataset(
+                    ds_name=self.ds_name,
+                    partition_type="train",
+                    use_voice_change_token=self.use_voice_change_token,
+                )
+            if not self.val_ds:
+                self.val_ds = ARDataset(
+                    ds_name=self.ds_name,
+                    partition_type="val",
+                    use_voice_change_token=self.use_voice_change_token,
+                )
 
         if stage == "test" or stage == "predict":
-            self.test_ds = ARDataset(
-                ds_name=self.ds_name,
-                partition_type="test",
-                use_voice_change_token=self.use_voice_change_token,
-            )
+            if not self.test_ds:
+                self.test_ds = ARDataset(
+                    ds_name=self.ds_name,
+                    partition_type="test",
+                    use_voice_change_token=self.use_voice_change_token,
+                )
 
     def train_dataloader(self):
         return DataLoader(
@@ -73,7 +84,7 @@ class ARDataModule(LightningDataModule):
 
     def predict_dataloader(self):
         print("Using test_dataloader for predictions.")
-        return self.test_dataloader(self)
+        return self.test_dataloader()
 
     def get_w2i_and_i2w(self):
         try:

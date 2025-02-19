@@ -12,6 +12,7 @@ from my_utils.ctc_dataset import CTCDataModule
 from my_utils.ar_dataset import ARDataModule
 from my_utils.seed import seed_everything
 
+torch.set_float32_matmul_precision('medium')
 seed_everything(42, benchmark=False)
 
 
@@ -117,7 +118,7 @@ def train(
             if not use_voice_change_token
             else f"{model_type}-VCT",
             name=f"Train-{ds_name}_Test-{ds_name}",
-            log_model=False,
+            log_model=True,
         ),
         callbacks=callbacks,
         max_epochs=epochs,
