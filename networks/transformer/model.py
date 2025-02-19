@@ -7,6 +7,8 @@ from torch.nn import CrossEntropyLoss
 from torchinfo import summary
 from lightning.pytorch import LightningModule
 
+from tqdm import tqdm
+
 from networks.transformer.decoder import Decoder
 from networks.transformer.encoder import Encoder, HEIGHT_REDUCTION, WIDTH_REDUCTION
 from my_utils.metrics import compute_metrics
@@ -66,6 +68,7 @@ class A2STransformer(LightningModule):
         self.padding_idx = w2i["<PAD>"]
         # Model
         self.max_seq_len = max_seq_len
+        self.max_audio_len = max_audio_len
         self.teacher_forcing_prob = teacher_forcing_prob
         self.encoder = Encoder(in_channels=NUM_CHANNELS)
         self.pos_2d = PositionalEncoding2D(
@@ -80,22 +83,22 @@ class A2STransformer(LightningModule):
             padding_idx=self.padding_idx,
             attn_window=attn_window,
         )
-        self.summary(max_audio_len)
+        self.summary()
         # Loss
         self.compute_loss = CrossEntropyLoss(ignore_index=self.padding_idx)
         # Predictions
         self.Y = []
         self.YHat = []
 
-    def summary(self, max_audio_len):
+    def summary(self):
         print("Encoder")
-        summary(self.encoder, input_size=[1, NUM_CHANNELS, IMG_HEIGHT, max_audio_len])
+        summary(self.encoder, input_size=[1, NUM_CHANNELS, IMG_HEIGHT, self.max_audio_len])
         print("Decoder")
         tgt_size = [1, self.max_seq_len]
         memory_size = [
             1,
             math.ceil(IMG_HEIGHT / HEIGHT_REDUCTION)
-            * math.ceil(max_audio_len / WIDTH_REDUCTION),
+            * math.ceil(self.max_audio_len / WIDTH_REDUCTION),
             256,
         ]
         memory_len_size = [1]
@@ -126,13 +129,16 @@ class A2STransformer(LightningModule):
     def apply_teacher_forcing(self, y):
         # y.shape = [batch_size, seq_len]
         y_errored = y.clone()
-        for i in range(y_errored.size(0)):
-            for j in range(y_errored.size(1)):
-                if (
-                    random.random() < self.teacher_forcing_prob
-                    and y[i, j] != self.padding_idx
-                ):
-                    y_errored[i, j] = random.randint(0, len(self.w2i) - 1)
+        # Create a random mask with the same shape as y_errored
+        random_mask = torch.rand_like(y_errored, dtype=torch.float) < self.teacher_forcing_prob
+        # Create a mask for non-padding tokens
+        non_padding_mask = y != self.padding_idx
+        # Combine the random mask and non-padding mask
+        combined_mask = random_mask & non_padding_mask
+        # Generate random indices for the entire matrix
+        random_indices = torch.randint(0, len(self.w2i), y_errored.shape, device=y_errored.device)
+        # Apply the random indices only where the combined mask is True
+        y_errored = torch.where(combined_mask, random_indices, y_errored)
         return y_errored
 
     def training_step(self, batch, batch_idx):
@@ -156,18 +162,21 @@ class A2STransformer(LightningModule):
         # Autoregressive decoding
         y_in = torch.tensor([self.w2i[SOS_TOKEN]]).unsqueeze(0).long().to(x.device)
         yhat = []
-        for _ in range(self.max_seq_len):
-            y_out_hat = self.decoder(tgt=y_in, memory=x, memory_len=None)
-            y_out_hat = y_out_hat[0, :, -1]  # Last token
-            y_out_hat_token = y_out_hat.argmax(dim=-1).item()
-            y_out_hat_word = self.i2w[y_out_hat_token]
-            yhat.append(y_out_hat_word)
-            if y_out_hat_word == EOS_TOKEN:
-                break
+        with torch.no_grad():
+            for _ in range(self.max_seq_len):
+                y_out_hat = self.decoder(tgt=y_in, memory=x, memory_len=None)
+                y_out_hat = y_out_hat[0, :, -1]  # Last token
+                y_out_hat_token = y_out_hat.argmax(dim=-1).item()
+                y_out_hat_word = self.i2w[y_out_hat_token]
+                #TODO: modify yhat, store the IDs in a np array and then convert to tokens
+                # to prevent list creation over and over again
+                yhat.append(y_out_hat_word)
+                if y_out_hat_word == EOS_TOKEN:
+                    break
 
-            y_in = torch.cat(
-                [y_in, torch.tensor([[y_out_hat_token]]).long().to(x.device)], dim=1
-            )
+                y_in = torch.cat(
+                    [y_in, torch.tensor([[y_out_hat_token]]).long().to(x.device)], dim=1
+                )
 
         # Decoded ground truth
         y = [self.ytest_i2w[i.item()] for i in y[0][1:]]  # Remove SOS_TOKEN
