@@ -25,6 +25,8 @@ def train(
     patience: int = 20,
     batch_size: int = 16,
     check_val_every_n_epoch: int = 5,
+    training_data_percentage_to_use: float = 1.,
+    val_data_percentage_to_use: float = 1.,
 ):
     gc.collect()
     torch.cuda.empty_cache()
@@ -38,6 +40,9 @@ def train(
     print(f"\tEpochs: {epochs}")
     print(f"\tPatience: {patience}")
     print(f"\tBatch size: {batch_size}")
+    print(f"\tCheck val every {check_val_every_n_epoch} epochs")
+    print(f"\tTraining data percentage: {training_data_percentage_to_use}")
+    print(f"\tValidation data percentage: {val_data_percentage_to_use}")
 
     if model_type == "crnn":
         # Data module
@@ -65,9 +70,13 @@ def train(
             ds_name=ds_name,
             use_voice_change_token=use_voice_change_token,
             batch_size=batch_size,
+            training_data_percentage_to_use=training_data_percentage_to_use,
+            val_data_percentage_to_use=val_data_percentage_to_use,
         )
         datamodule.setup(stage="fit")
+        datamodule.set_max_lens()  # must be run after datamodule.setup()!
         w2i, i2w = datamodule.get_w2i_and_i2w()
+
 
         # Model
         model = A2STransformer(
@@ -108,10 +117,11 @@ def train(
             mode="min",
             strict=True,
             check_finite=True,
-            divergence_threshold=100.00,
+            divergence_threshold=100.00,  # set back to 100
             check_on_train_epoch_end=False,
         ),
     ]
+    # print('CAREFUL WITH THIS: divergence_threshold=500.00 (train.py(124))')
     trainer = Trainer(
         logger=WandbLogger(
             project="A2S-Poly-ICASSP",
